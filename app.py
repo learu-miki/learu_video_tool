@@ -84,6 +84,12 @@ st.markdown("""
 
 transcript = st.text_area("▶ タイムコード付き文字起こしを貼り付け", height=300)
 
+if "all_captions" not in st.session_state:
+    st.session_state.all_captions = []
+
+if "side_captions" not in st.session_state:
+    st.session_state.side_captions = []
+
 if st.button("生成開始"):
     if not transcript.strip():
         st.error("文字起こしを貼り付けてください。")
@@ -131,7 +137,6 @@ if st.button("生成開始"):
 断片：
 {chunk}
 """
-
         resp = client.chat.completions.create(
             model=MODEL,
             messages=[{"role":"user","content": prompt}],
@@ -179,17 +184,19 @@ if st.button("生成開始"):
 
         all_captions.extend(filtered_caps)
 
+    st.session_state.all_captions = all_captions
+
     if not all_captions:
         st.warning("⚠️ 条件を満たすテロップが生成されませんでした。プロンプトや入力を見直してください。")
     else:
         st.success("✅ 全チャンク処理完了！")
-        st.subheader("生成されたテロップ案")
-        st.json(all_captions)
 
-        df = pd.DataFrame(all_captions)
-        st.download_button("CSV ダウンロード", df.to_csv(index=False), "captions.csv", "text/csv")
+if st.session_state.all_captions:
+    st.subheader("生成されたテロップ案")
+    st.json(st.session_state.all_captions)
+    df = pd.DataFrame(st.session_state.all_captions)
+    st.download_button("CSV ダウンロード", df.to_csv(index=False), "captions.csv", "text/csv")
 
-# ── サイドテロップコピー生成機能（20文字超えはGPTに任せる） ──
 if st.button("サイドテロップコピーを生成"):
     if not transcript.strip():
         st.error("文字起こしを貼り付けてください。")
@@ -197,10 +204,7 @@ if st.button("サイドテロップコピーを生成"):
 
     st.info("サイドテロップコピー案を生成中…")
 
-    # タイムコード単位で分割
     chapters = chunk_by_timestamp(transcript)
-
-    # 章数制限（最大8章）
     MAX_CHAPTERS = 8
     if len(chapters) > MAX_CHAPTERS:
         chunk_size = len(chapters) // MAX_CHAPTERS
@@ -254,7 +258,6 @@ if st.button("サイドテロップコピーを生成"):
             )
             raw = resp_side_caption.choices[0].message.content
 
-            # Markdown コードフェンス削除＋整形
             m = re.search(r"```(?:json)?\s*([\s\S]*?)```", raw)
             clean = m.group(1).strip() if m else raw.strip()
             clean = "\n".join([ln for ln in clean.splitlines() if ln.strip()])
@@ -274,13 +277,15 @@ if st.button("サイドテロップコピーを生成"):
         except Exception as e:
             st.error(f"サイドテロップコピー生成中にエラーが発生しました: {e}")
 
-    # 結果表示
+    st.session_state.side_captions = side_captions
+
     if not side_captions:
         st.warning("⚠️ 条件を満たすサイドテロップが生成されませんでした。")
     else:
         st.success("✅ 全章処理完了！")
-        st.subheader("生成されたサイドテロップ案")
-        st.json(side_captions)
 
-        df = pd.DataFrame(side_captions)
-        st.download_button("CSV ダウンロード", df.to_csv(index=False), "side_captions.csv", "text/csv")
+if st.session_state.side_captions:
+    st.subheader("生成されたサイドテロップ案")
+    st.json(st.session_state.side_captions)
+    df = pd.DataFrame(st.session_state.side_captions)
+    st.download_button("CSV ダウンロード", df.to_csv(index=False), "side_captions.csv", "text/csv")
