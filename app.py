@@ -189,7 +189,7 @@ if st.button("生成開始"):
         df = pd.DataFrame(all_captions)
         st.download_button("CSV ダウンロード", df.to_csv(index=False), "captions.csv", "text/csv")
 
-# ── サイドテロップコピー生成機能（文字数フィルタリング付） ──
+# ── サイドテロップコピー生成機能（20文字超えはGPTに任せる） ──
 if st.button("サイドテロップコピーを生成"):
     if not transcript.strip():
         st.error("文字起こしを貼り付けてください。")
@@ -222,8 +222,9 @@ if st.button("サイドテロップコピーを生成"):
 視聴者が続きを見たくなるようなインパクトのある
 「見出しテロップ」を1つだけ考えてください。
 句読点はすべて半角スペースに置き換え、
-必ず16文字以上20文字以内で作成してください。
-もし文字数が不足する場合は、キャッチーな一言や強調語を付け足して、必ず16文字以上に調整してください。
+必ず16文字以上20文字以内に調整してください。
+もし文字数が不足する場合は、キャッチーな一言や強調語を付け足して必ず16文字以上にしてください。
+また、もし20文字を超える場合は、20文字以内に調整してください。
 フォーマットは以下の通りです：
 {{
 "start":"HH:MM:SS:FF",
@@ -243,6 +244,7 @@ if st.button("サイドテロップコピーを生成"):
             )
             raw = resp_side_caption.choices[0].message.content
 
+            # Markdown コードフェンス削除＋整形
             m = re.search(r"```(?:json)?\s*([\s\S]*?)```", raw)
             clean = m.group(1).strip() if m else raw.strip()
             clean = "\n".join([ln for ln in clean.splitlines() if ln.strip()])
@@ -252,13 +254,6 @@ if st.button("サイドテロップコピーを生成"):
                 if "start" not in cap:
                     cap["start"] = "00:00:00:00"
                 caption_text = cap["caption"].replace("。", " ").replace("、", " ")
-                caption_length = len(caption_text)
-                # 文字数調整
-                if caption_length < 16:
-                    st.warning(f"サイドテロップ {i+1} は文字数不足で除外されました。")
-                    continue
-                elif caption_length > 20:
-                    caption_text = caption_text[:20]
                 cap["caption"] = caption_text
                 side_captions.append(cap)
             except json.JSONDecodeError as e:
