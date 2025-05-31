@@ -205,11 +205,16 @@ if st.button("サムネイルコピー案を生成"):
 文字起こし：
 {transcript}
 """
-    resp_thumbnail = client.chat.completions.create(
-        model=MODEL,
-        messages=[{"role":"user","content": prompt_thumbnail}],
-        max_tokens=500,
-        temperature=0.9,
-    )
-    st.subheader("サムネイルコピー案（5案）")
-    st.write(resp_thumbnail.choices[0].message.content)
+    try:
+        resp_thumbnail = client.chat.completions.create(
+            model=MODEL,
+            messages=[{"role":"user","content": prompt_thumbnail}],
+            max_tokens=500,
+            temperature=0.9,
+            stream=False    # ←ここを追加！！
+        )
+        st.subheader("サムネイルコピー案（5案）")
+        st.write(resp_thumbnail.choices[0].message.content)
+    except Exception as e:
+        st.error(f"サムネイルコピー生成中にエラーが発生しました: {e}")
+
