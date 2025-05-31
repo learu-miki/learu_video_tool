@@ -198,24 +198,34 @@ if st.button("サイドテロップコピーを生成"):
     st.info("サイドテロップコピー案を生成中…")
 
     try:
-        # タイムコードベースで章ごとにテキストを分割する例
-        def chunk_by_chapter(text: str) -> list[str]:
+        # チャプター単位分割（例：20行ごと or 5分程度で1チャプター）
+        def chunk_by_chapter(text: str, target_chunks: int = 7) -> list[str]:
             lines = text.splitlines(keepends=False)
+            # タイムコード行を含む行数
+            timecode_lines = [i for i, line in enumerate(lines) if re.match(r'^\d{2}:\d{2}:\d{2}', line)]
+            # ざっくり分割数を決める（タイムコードが多すぎる場合でも数を制御）
+            chunk_size = max(1, len(timecode_lines) // target_chunks)
             chapters = []
             current_chunk = ""
-            for line in lines:
-                # タイムコードの行で新しい章開始とみなす
+            count = 0
+
+            for i, line in enumerate(lines):
                 if re.match(r'^\d{2}:\d{2}:\d{2}', line):
-                    if current_chunk.strip():
-                        chapters.append(current_chunk.strip())
-                    current_chunk = line
+                    count += 1
+                    if count > 1 and count % chunk_size == 1:
+                        if current_chunk.strip():
+                            chapters.append(current_chunk.strip())
+                        current_chunk = line
+                    else:
+                        current_chunk += "\n" + line
                 else:
                     current_chunk += "\n" + line
             if current_chunk.strip():
                 chapters.append(current_chunk.strip())
             return chapters
 
-        chapters = chunk_by_chapter(transcript)
+        chapters = chunk_by_chapter(transcript, target_chunks=7)  # ← 目標チャプター数7個（5～10個に収める）
+
         all_side_captions = []
 
         for i, chapter in enumerate(chapters, start=1):
