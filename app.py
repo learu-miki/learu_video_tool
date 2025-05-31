@@ -189,7 +189,7 @@ if st.button("生成開始"):
         df = pd.DataFrame(all_captions)
         st.download_button("CSV ダウンロード", df.to_csv(index=False), "captions.csv", "text/csv")
 
-# ── サイドテロップコピー生成機能（章単位） ──
+# ── サイドテロップコピー生成 ──
 if st.button("サイドテロップコピーを生成"):
     if not transcript.strip():
         st.error("文字起こしを貼り付けてください。")
@@ -197,7 +197,14 @@ if st.button("サイドテロップコピーを生成"):
 
     st.info("サイドテロップコピーを生成中…")
 
-    chapters = chunk_by_chapter(transcript)
+    # mode によって分割関数を選択
+    if mode == "章単位":
+        chapters = chunk_by_chapter(transcript)
+    elif mode == "タイムコード単位":
+        chapters = chunk_by_timestamp(transcript)
+    else:
+        chapters = chunk_by_tokens(transcript)
+
     for i, chapter in enumerate(chapters, start=1):
         start, end = extract_timestamps(chapter)
         st.write(f"▶ 章 {i}/{len(chapters)}（{start} ～ {end}）を処理中…")
