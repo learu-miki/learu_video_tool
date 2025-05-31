@@ -197,61 +197,74 @@ if st.button("サイドテロップコピーを生成"):
 
     st.info("サイドテロップコピー案を生成中…")
 
-    # 章単位分割
-    chapters = chunk_by_chapter(transcript)
+    try:
+        # タイムコードベースで章ごとにテキストを分割する例
+        def chunk_by_chapter(text: str) -> list[str]:
+            lines = text.splitlines(keepends=False)
+            chapters = []
+            current_chunk = ""
+            for line in lines:
+                # タイムコードの行で新しい章開始とみなす
+                if re.match(r'^\d{2}:\d{2}:\d{2}', line):
+                    if current_chunk.strip():
+                        chapters.append(current_chunk.strip())
+                    current_chunk = line
+                else:
+                    current_chunk += "\n" + line
+            if current_chunk.strip():
+                chapters.append(current_chunk.strip())
+            return chapters
 
-    all_side_captions = []
-    for i, chapter in enumerate(chapters, start=1):
-        st.write(f"▶ シーン {i}/{len(chapters)} を処理中…")
+        chapters = chunk_by_chapter(transcript)
+        all_side_captions = []
 
-        prompt_side_caption = f"""
-以下のテキストは、動画のあるシーンの文字起こし（タイムスタンプ付き）です。
-このテキストに基づいて、このシーンで使用するサイドテロップのコピー案を5案考えてください。
-視聴者が注目するような、インパクトのあるコピーを作成してください。
-出力はJSON配列形式で、例のように出力してください：
+        for i, chapter in enumerate(chapters, start=1):
+            st.write(f"▶ サイドテロップ {i}/{len(chapters)} を処理中…")
+
+            prompt = f"""
+以下は動画の章単位の文字起こしです。
+この章内容に合うサイドテロップコピーを1案だけ作成してください。
+シンプルでわかりやすいフレーズにしてください。
+タイムコード（章の先頭行）も必ず含めて出力してください。
+出力は以下のJSON形式で出力してください：
 [
   {{
-    "start": "HH:MM:SS",
-    "end": "HH:MM:SS",
-    "side_caption": "ここにコピー案"
-  }},
-  …
+    "start":"HH:MM:SS",
+    "caption":"ここにコピー"
+  }}
 ]
 
-テキスト：
+章内容：
 {chapter}
 """
-
-        try:
-            resp_side_caption = client.chat.completions.create(
+            resp = client.chat.completions.create(
                 model=MODEL,
-                messages=[{"role": "user", "content": prompt_side_caption}],
-                max_tokens=500,
-                temperature=0.9
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=300,
+                temperature=0.7,
+                stream=False
             )
-            raw = resp_side_caption.choices[0].message.content
+            raw = resp.choices[0].message.content
 
-            # Markdown コードフェンス削除＋空行トリム
+            # JSON形式以外の余分な文字を除去
             m = re.search(r"```(?:json)?\s*([\s\S]*?)```", raw)
             clean = m.group(1).strip() if m else raw.strip()
             clean = "\n".join([ln for ln in clean.splitlines() if ln.strip()])
 
             try:
-                side_caps = json.loads(clean)
+                cap = json.loads(clean)
+                all_side_captions.extend(cap)
             except json.JSONDecodeError as e:
-                st.error(f"シーン {i} のパース失敗: {e}")
+                st.error(f"サイドテロップ {i} のパース失敗: {e}")
                 st.code(raw, language="json")
                 st.stop()
 
-            all_side_captions.extend(side_caps)
+        st.success("✅ サイドテロップコピー案の生成が完了しました！")
+        st.subheader("生成されたサイドテロップ案")
+        st.json(all_side_captions)
 
-        except Exception as e:
-            st.error(f"サイドテロップコピー生成中にエラーが発生しました: {e}")
+        df_side = pd.DataFrame(all_side_captions)
+        st.download_button("CSV ダウンロード（サイドテロップ）", df_side.to_csv(index=False), "side_captions.csv", "text/csv")
 
-    # 結果表示
-    st.success("✅ 全シーン処理完了！")
-    st.subheader("生成されたサイドテロップ案")
-    st.json(all_side_captions)
-
-    df = pd.DataFrame(all_side_captions)
-    st.download_button("CSV ダウンロード", df.to_csv(index=False), "side_captions.csv", "text/csv")
+    except Exception as e:
+        st.error(f"サイドテロップコピー生成中にエラーが発生しました: {e}")
