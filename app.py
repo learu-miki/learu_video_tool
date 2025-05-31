@@ -189,7 +189,7 @@ if st.button("生成開始"):
         df = pd.DataFrame(all_captions)
         st.download_button("CSV ダウンロード", df.to_csv(index=False), "captions.csv", "text/csv")
 
-# ── サイドテロップ生成機能 ──
+# ── サイドテロップコピー生成機能（章ごと） ──
 if st.button("サイドテロップコピーを生成"):
     if not transcript.strip():
         st.error("文字起こしを貼り付けてください。")
@@ -197,74 +197,73 @@ if st.button("サイドテロップコピーを生成"):
 
     st.info("サイドテロップコピー案を生成中…")
 
-    chapters = chunk_by_timestamp(transcript)  # 章ごと（タイムコード単位）に分割
+    # タイムコード単位で分割
+    chapters = chunk_by_timestamp(transcript)
 
-    all_side_captions = []
-    for i, chapter in enumerate(chapters, start=1):
-        st.write(f"▶ サイドテロップ {i}/{len(chapters)} を処理中…")
+    # 章数制限（最大8章）
+    MAX_CHAPTERS = 8
+    if len(chapters) > MAX_CHAPTERS:
+        chunk_size = len(chapters) // MAX_CHAPTERS
+        merged = []
+        buf = ""
+        for idx, ch in enumerate(chapters, start=1):
+            buf += ch
+            if idx % chunk_size == 0 or idx == len(chapters):
+                merged.append(buf)
+                buf = ""
+        chapters = merged
 
-        prompt_side = f"""
-以下の文字起こし原稿は、動画の1つの章です。
-この章に対して、視聴者が続きを見たくなるような
-インパクトのあるサイドテロップを1案だけ作成してください。
-短くキャッチーにし、動画の魅力が伝わるようにしてください。
-また、タイムコードをstartキーで含めて、以下のフォーマットでJSON形式で出力してください。
-提案文などは一切書かず、JSONのみ出力してください。
+    side_captions = []
+    for i, chapter in enumerate(chapters):
+        st.write(f"▶ サイドテロップ {i+1}/{len(chapters)} を処理中…")
 
-出力形式：
-[
-  {{
-    "start":"HH:MM:SS",
-    "caption":"ここにテロップ"
-  }}
-]
+        prompt_side_caption = f"""
+以下は動画の文字起こし原稿（章）です。この章をもとに、
+視聴者が思わず見たくなるようなインパクトのある「見出しテロップ」を1つだけ考えてください。
+句読点はすべて半角スペースに置き換え、30文字以内にまとめてください。
+フォーマットは以下の通りです：
+{{
+"start":"HH:MM:SS:FF",
+"caption":"ここに見出しテロップ"
+}}
 
-章内容：
+章：
 {chapter}
 """
         try:
-            resp_side = client.chat.completions.create(
+            resp_side_caption = client.chat.completions.create(
                 model=MODEL,
-                messages=[{"role":"user","content": prompt_side}],
-                max_tokens=500,
-                temperature=0.9,
+                messages=[{"role": "user", "content": prompt_side_caption}],
+                max_tokens=300,
+                temperature=0.7,
                 stream=False
             )
-            raw = resp_side.choices[0].message.content
+            raw = resp_side_caption.choices[0].message.content
 
-            # Markdown コードフェンス削除
+            # JSONコードフェンス削除＋整形
             m = re.search(r"```(?:json)?\s*([\s\S]*?)```", raw)
             clean = m.group(1).strip() if m else raw.strip()
             clean = "\n".join([ln for ln in clean.splitlines() if ln.strip()])
 
-            # JSONだけを抜き出す
-            json_start = clean.find('[')
-            json_end = clean.rfind(']') + 1
-            clean_json = clean[json_start:json_end]
+            # JSONパース
+            try:
+                cap = json.loads(clean)
+                # タイムスタンプがない場合の暫定対応
+                if "start" not in cap:
+                    cap["start"] = "00:00:00:00"
+                side_captions.append(cap)
+            except json.JSONDecodeError as e:
+                st.error(f"サイドテロップ {i+1} のパース失敗: {e}")
+                st.code(raw, language="json")
+                st.stop()
 
-            caps = json.loads(clean_json)
-            for idx, cap in enumerate(caps):
-                formatted = {
-                    str(idx): {
-                        "start": cap["start"],
-                        "caption": cap["caption"]
-                    }
-                }
-                all_side_captions.append(formatted)
+        except Exception as e:
+            st.error(f"サイドテロップコピー生成中にエラーが発生しました: {e}")
 
-        except json.JSONDecodeError as e:
-            st.error(f"サイドテロップ {i} のパース失敗: {e}")
-            st.code(raw, language="json")
-            st.stop()
-
-    st.success("✅ 全サイドテロップ処理完了！")
+    # 結果表示
+    st.success("✅ 全章処理完了！")
     st.subheader("生成されたサイドテロップ案")
-    st.json(all_side_captions)
+    st.json(side_captions)
 
-    # CSV ダウンロードも追加（オプション）
-    flattened = []
-    for item in all_side_captions:
-        for k, v in item.items():
-            flattened.append({"start": v["start"], "caption": v["caption"]})
-    df = pd.DataFrame(flattened)
-    st.download_button("サイドテロップCSVダウンロード", df.to_csv(index=False), "side_captions.csv", "text/csv")
+    df = pd.DataFrame(side_captions)
+    st.download_button("CSV ダウンロード", df.to_csv(index=False), "side_captions.csv", "text/csv")
