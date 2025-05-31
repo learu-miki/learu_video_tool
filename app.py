@@ -42,9 +42,6 @@ def chunk_by_tokens(text: str) -> list[str]:
 
 # ── タイムコード単位分割 ──
 def chunk_by_timestamp(text: str) -> list[str]:
-    """
-    行頭の HH:MM:SS を起点に、次のタイムコード行までを一チャンクに。
-    """
     lines = text.splitlines(keepends=True)
     chunks = []
     buf = ""
@@ -61,7 +58,7 @@ def chunk_by_timestamp(text: str) -> list[str]:
 
 # ── Streamlit UI ──
 st.set_page_config(page_title="分割テロップツール", layout="wide")
-st.title("✂️ テロップ自動生成")
+st.title("✂️ テロップ自動生成（カテゴリ判定付き）")
 
 st.markdown("""
 - 「チャンク分割モード」で**タイムコード単位**を選ぶと、  
@@ -81,7 +78,6 @@ if st.button("生成開始"):
         st.error("文字起こしを貼り付けてください。")
         st.stop()
 
-    # 分割
     st.info("チャンク分割中…")
     if mode == "タイムコード単位":
         chunks = chunk_by_timestamp(transcript)
@@ -92,19 +88,31 @@ if st.button("生成開始"):
     all_captions = []
     for i, chunk in enumerate(chunks, start=1):
         st.write(f"▶ チャンク {i}/{len(chunks)} を処理中…")
+
         prompt = f"""
 以下は動画のセリフ文字起こし（タイムコード付き）の断片です。
 この内容を「視聴者に一番伝えたいポイントを6語前後で要約したテロップ」にリライトしてください。
-出力は**純粋なJSON配列のみ**で、例のような形式でお願いします：
+また、そのテロップが以下のどのカテゴリに該当するかを判定し、JSONに含めてください：
+- positive（ポジティブ）
+- negative（ネガティブ）
+- neutral（ニュートラル）
+- point（ポイント／要点）
 
+フォーマット例：
 [
-  {{ "start":"HH:MM:SS", "end":"HH:MM:SS", "caption":"ここにテロップ" }},
+  {{
+    "start":"HH:MM:SS",
+    "end":"HH:MM:SS",
+    "caption":"ここにテロップ",
+    "category":"positive"
+  }},
   …
 ]
 
 断片：
 {chunk}
 """
+
         resp = client.chat.completions.create(
             model=MODEL,
             messages=[{"role":"user","content": prompt}],
@@ -127,7 +135,6 @@ if st.button("生成開始"):
 
         all_captions.extend(caps)
 
-    # 結果表示・CSVダウンロード
     st.success("✅ 全チャンク処理完了！")
     st.subheader("生成されたテロップ案")
     st.json(all_captions)
