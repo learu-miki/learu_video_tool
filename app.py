@@ -189,7 +189,7 @@ if st.button("生成開始"):
         df = pd.DataFrame(all_captions)
         st.download_button("CSV ダウンロード", df.to_csv(index=False), "captions.csv", "text/csv")
 
-# ── サイドテロップコピー生成機能（章ごと） ──
+# ── サイドテロップコピー生成機能（文字数フィルタリング付） ──
 if st.button("サイドテロップコピーを生成"):
     if not transcript.strip():
         st.error("文字起こしを貼り付けてください。")
@@ -218,13 +218,15 @@ if st.button("サイドテロップコピーを生成"):
         st.write(f"▶ サイドテロップ {i+1}/{len(chapters)} を処理中…")
 
         prompt_side_caption = f"""
-以下は動画の文字起こし原稿（章）です。この章をもとに、
-視聴者が思わず見たくなるようなインパクトのある「見出しテロップ」を1つだけ考えてください。
-句読点はすべて半角スペースに置き換え、最低15文字、最大20文字で作成してください。
+以下の文字起こし原稿（章）から、
+視聴者が続きを見たくなるようなインパクトのある
+「見出しテロップ」を1つだけ考えてください。
+句読点はすべて半角スペースに置き換え、
+16〜20文字で作成してください。
 フォーマットは以下の通りです：
 {{
 "start":"HH:MM:SS:FF",
-"caption":"ここに見出しテロップ"
+"caption":"ここにテロップ"
 }}
 
 章：
@@ -240,16 +242,23 @@ if st.button("サイドテロップコピーを生成"):
             )
             raw = resp_side_caption.choices[0].message.content
 
-            # JSONコードフェンス削除＋整形
             m = re.search(r"```(?:json)?\s*([\s\S]*?)```", raw)
             clean = m.group(1).strip() if m else raw.strip()
             clean = "\n".join([ln for ln in clean.splitlines() if ln.strip()])
 
-            # JSONパース
             try:
                 cap = json.loads(clean)
                 if "start" not in cap:
                     cap["start"] = "00:00:00:00"
+                caption_text = cap["caption"].replace("。", " ").replace("、", " ")
+                caption_length = len(caption_text)
+                # 文字数調整
+                if caption_length < 16:
+                    st.warning(f"サイドテロップ {i+1} は文字数不足で除外されました。")
+                    continue
+                elif caption_length > 20:
+                    caption_text = caption_text[:20]
+                cap["caption"] = caption_text
                 side_captions.append(cap)
             except json.JSONDecodeError as e:
                 st.error(f"サイドテロップ {i+1} のパース失敗: {e}")
@@ -260,9 +269,12 @@ if st.button("サイドテロップコピーを生成"):
             st.error(f"サイドテロップコピー生成中にエラーが発生しました: {e}")
 
     # 結果表示
-    st.success("✅ 全章処理完了！")
-    st.subheader("生成されたサイドテロップ案")
-    st.json(side_captions)
+    if not side_captions:
+        st.warning("⚠️ 条件を満たすサイドテロップが生成されませんでした。")
+    else:
+        st.success("✅ 全章処理完了！")
+        st.subheader("生成されたサイドテロップ案")
+        st.json(side_captions)
 
-    df = pd.DataFrame(side_captions)
-    st.download_button("CSV ダウンロード", df.to_csv(index=False), "side_captions.csv", "text/csv")
+        df = pd.DataFrame(side_captions)
+        st.download_button("CSV ダウンロード", df.to_csv(index=False), "side_captions.csv", "text/csv")
