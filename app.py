@@ -189,3 +189,33 @@ if st.button("生成開始"):
         df = pd.DataFrame(all_captions)
         st.download_button("CSV ダウンロード", df.to_csv(index=False), "captions.csv", "text/csv")
 
+# ── サイドテロップコピー生成機能 ──
+if st.button("サイドテロップコピーを生成"):
+    if not transcript.strip():
+        st.error("文字起こしを貼り付けてください。")
+        st.stop()
+
+    st.info("サイドテロップコピーを生成中…")
+    for i, chunk in enumerate(chunk_by_timestamp(transcript), start=1):
+        st.write(f"▶ シーン {i}/{len(chunks)} を処理中…")
+
+        prompt_side = f"""
+以下は動画のセリフ文字起こし（タイムコード付き）の断片です。
+各シーンに対して、視聴者が印象に残るような
+5〜15文字程度のサイドテロップコピー（サイドスーパー）を1案だけ作成してください。
+誇張や大げさな表現OK、視聴者が食いつくコピーをお願いします。
+
+断片：
+{chunk}
+"""
+        try:
+            resp_side = client.chat.completions.create(
+                model=MODEL,
+                messages=[{"role":"user","content": prompt_side}],
+                max_tokens=200,
+                temperature=0.9,
+            )
+            st.subheader(f"▶ シーン {i} のサイドテロップコピー")
+            st.write(resp_side.choices[0].message.content.strip())
+        except Exception as e:
+            st.error(f"シーン {i} のサイドテロップ生成中にエラーが発生しました: {e}")
