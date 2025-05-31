@@ -196,26 +196,27 @@ if st.button("サイドテロップコピーを生成"):
         st.stop()
 
     st.info("サイドテロップコピーを生成中…")
-    for i, chunk in enumerate(chunk_by_timestamp(transcript), start=1):
+
+    chunks = chunk_by_timestamp(transcript)
+    for i, chunk in enumerate(chunks, start=1):
         st.write(f"▶ シーン {i}/{len(chunks)} を処理中…")
 
-        prompt_side = f"""
-以下は動画のセリフ文字起こし（タイムコード付き）の断片です。
-各シーンに対して、視聴者が印象に残るような
-5〜15文字程度のサイドテロップコピー（サイドスーパー）を1案だけ作成してください。
-誇張や大げさな表現OK、視聴者が食いつくコピーをお願いします。
+        prompt_side_caption = f"""
+以下は動画のシーン文字起こし（タイムコード付き）です。
+この内容をもとに「視聴者が注目したくなるサイドテロップコピー」を1つ提案してください。
+シーン内の重要なメッセージを簡潔に表現し、注目度を高めるものにしてください。
 
-断片：
+文字起こし：
 {chunk}
 """
         try:
-            resp_side = client.chat.completions.create(
+            resp_side_caption = client.chat.completions.create(
                 model=MODEL,
-                messages=[{"role":"user","content": prompt_side}],
-                max_tokens=200,
-                temperature=0.9,
+                messages=[{"role":"user","content": prompt_side_caption}],
+                max_tokens=150,
+                temperature=0.7,
             )
-            st.subheader(f"▶ シーン {i} のサイドテロップコピー")
-            st.write(resp_side.choices[0].message.content.strip())
+            st.write(f"シーン {i} のサイドテロップコピー")
+            st.write(resp_side_caption.choices[0].message.content)
         except Exception as e:
-            st.error(f"シーン {i} のサイドテロップ生成中にエラーが発生しました: {e}")
+            st.error(f"シーン {i} のサイドテロップコピー生成中にエラーが発生しました: {e}")
