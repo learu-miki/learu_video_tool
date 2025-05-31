@@ -189,7 +189,7 @@ if st.button("生成開始"):
         df = pd.DataFrame(all_captions)
         st.download_button("CSV ダウンロード", df.to_csv(index=False), "captions.csv", "text/csv")
 
-# ── サイドテロップコピー生成機能（見出し風タイトル） ──
+# ── サイドテロップコピー生成機能（フォーマット統一） ──
 if st.button("サイドテロップコピーを生成"):
     if not transcript.strip():
         st.error("文字起こしを貼り付けてください。")
@@ -198,7 +198,7 @@ if st.button("サイドテロップコピーを生成"):
     st.info("サイドテロップコピー案を生成中…")
 
     try:
-        # チャプター単位分割（例：7個目標）
+        # チャプター単位分割（例：5〜10個目標）
         def chunk_by_chapter(text: str, target_chunks: int = 7) -> list[str]:
             lines = text.splitlines(keepends=False)
             timecode_lines = [i for i, line in enumerate(lines) if re.match(r'^\d{2}:\d{2}:\d{2}', line)]
@@ -234,13 +234,14 @@ if st.button("サイドテロップコピーを生成"):
 この章に対して、視聴者が動画の続きを見たくなるような
 インパクトのある見出しタイトルを1案だけ作成してください。
 短くキャッチーにし、動画の魅力が伝わるようにしてください。
-必ずタイムコード（章の先頭行）を含めてJSON形式で出力してください。
+必ず章の先頭のタイムコード（例：00:00:00）を"start"キーで含め、
+以下のフォーマットでJSON形式で出力してください。
 
 出力形式：
 [
   {{
     "start":"HH:MM:SS",
-    "caption":"見出しタイトル"
+    "caption":"ここにテロップ"
   }}
 ]
 
@@ -261,18 +262,29 @@ if st.button("サイドテロップコピーを生成"):
             clean = "\n".join([ln for ln in clean.splitlines() if ln.strip()])
 
             try:
-                cap = json.loads(clean)
-                all_side_captions.extend(cap)
+                caps = json.loads(clean)
+                for idx, cap in enumerate(caps):
+                    formatted = {
+                        str(idx): {
+                            "start": cap["start"],
+                            "caption": cap["caption"]
+                        }
+                    }
+                    all_side_captions.append(formatted)
             except json.JSONDecodeError as e:
                 st.error(f"サイドテロップ {i} のパース失敗: {e}")
                 st.code(raw, language="json")
                 st.stop()
 
         st.success("✅ サイドテロップコピー案の生成が完了しました！")
-        st.subheader("生成されたサイドテロップ案（見出し）")
+        st.subheader("生成されたサイドテロップ案")
         st.json(all_side_captions)
 
-        df_side = pd.DataFrame(all_side_captions)
+        df_side = pd.DataFrame([{
+            "index": idx,
+            "start": item[str(idx)]["start"],
+            "caption": item[str(idx)]["caption"]
+        } for idx, item in enumerate(all_side_captions)])
         st.download_button("CSV ダウンロード（サイドテロップ）", df_side.to_csv(index=False), "side_captions.csv", "text/csv")
 
     except Exception as e:
