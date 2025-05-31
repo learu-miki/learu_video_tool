@@ -189,7 +189,7 @@ if st.button("生成開始"):
         df = pd.DataFrame(all_captions)
         st.download_button("CSV ダウンロード", df.to_csv(index=False), "captions.csv", "text/csv")
 
-# ── サイドテロップコピー生成機能 ──
+# ── サイドテロップコピー生成機能（章単位） ──
 if st.button("サイドテロップコピーを生成"):
     if not transcript.strip():
         st.error("文字起こしを貼り付けてください。")
@@ -197,17 +197,18 @@ if st.button("サイドテロップコピーを生成"):
 
     st.info("サイドテロップコピーを生成中…")
 
-    chunks = chunk_by_timestamp(transcript)
-    for i, chunk in enumerate(chunks, start=1):
-        st.write(f"▶ シーン {i}/{len(chunks)} を処理中…")
+    chapters = chunk_by_chapter(transcript)
+    for i, chapter in enumerate(chapters, start=1):
+        start, end = extract_timestamps(chapter)
+        st.write(f"▶ 章 {i}/{len(chapters)}（{start} ～ {end}）を処理中…")
 
         prompt_side_caption = f"""
-以下は動画のシーン文字起こし（タイムコード付き）です。
-この内容をもとに「視聴者が注目したくなるサイドテロップコピー」を1つ提案してください。
+以下は動画の章（チャプター）の文字起こし（タイムコード付き）です。
+この章の内容をもとに「視聴者が注目したくなるサイドテロップコピー」を1つ提案してください。
 シーン内の重要なメッセージを簡潔に表現し、注目度を高めるものにしてください。
 
 文字起こし：
-{chunk}
+{chapter}
 """
         try:
             resp_side_caption = client.chat.completions.create(
@@ -216,7 +217,7 @@ if st.button("サイドテロップコピーを生成"):
                 max_tokens=150,
                 temperature=0.7,
             )
-            st.write(f"シーン {i} のサイドテロップコピー")
+            st.write(f"章 {i} のサイドテロップコピー（{start} ～ {end}）")
             st.write(resp_side_caption.choices[0].message.content)
         except Exception as e:
-            st.error(f"シーン {i} のサイドテロップコピー生成中にエラーが発生しました: {e}")
+            st.error(f"章 {i} のサイドテロップコピー生成中にエラーが発生しました: {e}")
