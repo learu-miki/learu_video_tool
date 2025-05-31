@@ -189,7 +189,7 @@ if st.button("生成開始"):
         df = pd.DataFrame(all_captions)
         st.download_button("CSV ダウンロード", df.to_csv(index=False), "captions.csv", "text/csv")
 
-# ── サイドテロップコピー生成機能 ──
+# ── サイドテロップコピー生成機能（見出し風タイトル） ──
 if st.button("サイドテロップコピーを生成"):
     if not transcript.strip():
         st.error("文字起こしを貼り付けてください。")
@@ -198,12 +198,10 @@ if st.button("サイドテロップコピーを生成"):
     st.info("サイドテロップコピー案を生成中…")
 
     try:
-        # チャプター単位分割（例：20行ごと or 5分程度で1チャプター）
+        # チャプター単位分割（例：7個目標）
         def chunk_by_chapter(text: str, target_chunks: int = 7) -> list[str]:
             lines = text.splitlines(keepends=False)
-            # タイムコード行を含む行数
             timecode_lines = [i for i, line in enumerate(lines) if re.match(r'^\d{2}:\d{2}:\d{2}', line)]
-            # ざっくり分割数を決める（タイムコードが多すぎる場合でも数を制御）
             chunk_size = max(1, len(timecode_lines) // target_chunks)
             chapters = []
             current_chunk = ""
@@ -224,7 +222,7 @@ if st.button("サイドテロップコピーを生成"):
                 chapters.append(current_chunk.strip())
             return chapters
 
-        chapters = chunk_by_chapter(transcript, target_chunks=7)  # ← 目標チャプター数7個（5～10個に収める）
+        chapters = chunk_by_chapter(transcript, target_chunks=7)
 
         all_side_captions = []
 
@@ -232,15 +230,17 @@ if st.button("サイドテロップコピーを生成"):
             st.write(f"▶ サイドテロップ {i}/{len(chapters)} を処理中…")
 
             prompt = f"""
-以下は動画の章単位の文字起こしです。
-この章内容に合うサイドテロップコピーを1案だけ作成してください。
-シンプルでわかりやすいフレーズにしてください。
-タイムコード（章の先頭行）も必ず含めて出力してください。
-出力は以下のJSON形式で出力してください：
+以下の文字起こし原稿は、動画の1つの章です。
+この章に対して、視聴者が動画の続きを見たくなるような
+インパクトのある見出しタイトルを1案だけ作成してください。
+短くキャッチーにし、動画の魅力が伝わるようにしてください。
+必ずタイムコード（章の先頭行）を含めてJSON形式で出力してください。
+
+出力形式：
 [
   {{
     "start":"HH:MM:SS",
-    "caption":"ここにコピー"
+    "caption":"見出しタイトル"
   }}
 ]
 
@@ -251,12 +251,11 @@ if st.button("サイドテロップコピーを生成"):
                 model=MODEL,
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=300,
-                temperature=0.7,
+                temperature=0.9,
                 stream=False
             )
             raw = resp.choices[0].message.content
 
-            # JSON形式以外の余分な文字を除去
             m = re.search(r"```(?:json)?\s*([\s\S]*?)```", raw)
             clean = m.group(1).strip() if m else raw.strip()
             clean = "\n".join([ln for ln in clean.splitlines() if ln.strip()])
@@ -270,7 +269,7 @@ if st.button("サイドテロップコピーを生成"):
                 st.stop()
 
         st.success("✅ サイドテロップコピー案の生成が完了しました！")
-        st.subheader("生成されたサイドテロップ案")
+        st.subheader("生成されたサイドテロップ案（見出し）")
         st.json(all_side_captions)
 
         df_side = pd.DataFrame(all_side_captions)
