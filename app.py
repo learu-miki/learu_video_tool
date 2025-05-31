@@ -189,7 +189,7 @@ if st.button("生成開始"):
         df = pd.DataFrame(all_captions)
         st.download_button("CSV ダウンロード", df.to_csv(index=False), "captions.csv", "text/csv")
 
-# ── サイドテロップコピー生成機能（フォーマット統一） ──
+# ── サイドテロップ生成機能 ──
 if st.button("サイドテロップコピーを生成"):
     if not transcript.strip():
         st.error("文字起こしを貼り付けてください。")
@@ -197,45 +197,19 @@ if st.button("サイドテロップコピーを生成"):
 
     st.info("サイドテロップコピー案を生成中…")
 
-    try:
-        # チャプター単位分割（例：5〜10個目標）
-        def chunk_by_chapter(text: str, target_chunks: int = 7) -> list[str]:
-            lines = text.splitlines(keepends=False)
-            timecode_lines = [i for i, line in enumerate(lines) if re.match(r'^\d{2}:\d{2}:\d{2}', line)]
-            chunk_size = max(1, len(timecode_lines) // target_chunks)
-            chapters = []
-            current_chunk = ""
-            count = 0
+    chapters = chunk_by_timestamp(transcript)  # 章ごと（タイムコード単位）に分割
 
-            for i, line in enumerate(lines):
-                if re.match(r'^\d{2}:\d{2}:\d{2}', line):
-                    count += 1
-                    if count > 1 and count % chunk_size == 1:
-                        if current_chunk.strip():
-                            chapters.append(current_chunk.strip())
-                        current_chunk = line
-                    else:
-                        current_chunk += "\n" + line
-                else:
-                    current_chunk += "\n" + line
-            if current_chunk.strip():
-                chapters.append(current_chunk.strip())
-            return chapters
+    all_side_captions = []
+    for i, chapter in enumerate(chapters, start=1):
+        st.write(f"▶ サイドテロップ {i}/{len(chapters)} を処理中…")
 
-        chapters = chunk_by_chapter(transcript, target_chunks=7)
-
-        all_side_captions = []
-
-        for i, chapter in enumerate(chapters, start=1):
-            st.write(f"▶ サイドテロップ {i}/{len(chapters)} を処理中…")
-
-            prompt = f"""
+        prompt_side = f"""
 以下の文字起こし原稿は、動画の1つの章です。
-この章に対して、視聴者が動画の続きを見たくなるような
-インパクトのある見出しタイトルを1案だけ作成してください。
+この章に対して、視聴者が続きを見たくなるような
+インパクトのあるサイドテロップを1案だけ作成してください。
 短くキャッチーにし、動画の魅力が伝わるようにしてください。
-必ず章の先頭のタイムコード（例：00:00:00）を"start"キーで含め、
-以下のフォーマットでJSON形式で出力してください。
+また、タイムコードをstartキーで含めて、以下のフォーマットでJSON形式で出力してください。
+提案文などは一切書かず、JSONのみ出力してください。
 
 出力形式：
 [
@@ -248,44 +222,49 @@ if st.button("サイドテロップコピーを生成"):
 章内容：
 {chapter}
 """
-            resp = client.chat.completions.create(
+        try:
+            resp_side = client.chat.completions.create(
                 model=MODEL,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=300,
+                messages=[{"role":"user","content": prompt_side}],
+                max_tokens=500,
                 temperature=0.9,
                 stream=False
             )
-            raw = resp.choices[0].message.content
+            raw = resp_side.choices[0].message.content
 
+            # Markdown コードフェンス削除
             m = re.search(r"```(?:json)?\s*([\s\S]*?)```", raw)
             clean = m.group(1).strip() if m else raw.strip()
             clean = "\n".join([ln for ln in clean.splitlines() if ln.strip()])
 
-            try:
-                caps = json.loads(clean)
-                for idx, cap in enumerate(caps):
-                    formatted = {
-                        str(idx): {
-                            "start": cap["start"],
-                            "caption": cap["caption"]
-                        }
+            # JSONだけを抜き出す
+            json_start = clean.find('[')
+            json_end = clean.rfind(']') + 1
+            clean_json = clean[json_start:json_end]
+
+            caps = json.loads(clean_json)
+            for idx, cap in enumerate(caps):
+                formatted = {
+                    str(idx): {
+                        "start": cap["start"],
+                        "caption": cap["caption"]
                     }
-                    all_side_captions.append(formatted)
-            except json.JSONDecodeError as e:
-                st.error(f"サイドテロップ {i} のパース失敗: {e}")
-                st.code(raw, language="json")
-                st.stop()
+                }
+                all_side_captions.append(formatted)
 
-        st.success("✅ サイドテロップコピー案の生成が完了しました！")
-        st.subheader("生成されたサイドテロップ案")
-        st.json(all_side_captions)
+        except json.JSONDecodeError as e:
+            st.error(f"サイドテロップ {i} のパース失敗: {e}")
+            st.code(raw, language="json")
+            st.stop()
 
-        df_side = pd.DataFrame([{
-            "index": idx,
-            "start": item[str(idx)]["start"],
-            "caption": item[str(idx)]["caption"]
-        } for idx, item in enumerate(all_side_captions)])
-        st.download_button("CSV ダウンロード（サイドテロップ）", df_side.to_csv(index=False), "side_captions.csv", "text/csv")
+    st.success("✅ 全サイドテロップ処理完了！")
+    st.subheader("生成されたサイドテロップ案")
+    st.json(all_side_captions)
 
-    except Exception as e:
-        st.error(f"サイドテロップコピー生成中にエラーが発生しました: {e}")
+    # CSV ダウンロードも追加（オプション）
+    flattened = []
+    for item in all_side_captions:
+        for k, v in item.items():
+            flattened.append({"start": v["start"], "caption": v["caption"]})
+    df = pd.DataFrame(flattened)
+    st.download_button("サイドテロップCSVダウンロード", df.to_csv(index=False), "side_captions.csv", "text/csv")
