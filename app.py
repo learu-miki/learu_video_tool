@@ -6,6 +6,7 @@ import tiktoken
 import pandas as pd
 from dotenv import load_dotenv
 from openai import OpenAI
+from datetime import timedelta
 
 # ── 環境変数読み込み ──
 load_dotenv()
@@ -17,39 +18,37 @@ client = OpenAI(api_key=API_KEY)
 
 # ── 定数 ──
 MODEL = "gpt-3.5-turbo"
-MAX_TOKENS = 1000
-CHUNK_TOKEN_SIZE = 2000
+MAX_TOKENS = 2000
 
-# ── トークン数計測＆トークンベース分割 ──
+# ── トークン数計測 ──
 encoding = tiktoken.encoding_for_model(MODEL)
 def count_tokens(text: str) -> int:
     return len(encoding.encode(text))
 
-def chunk_by_tokens(text: str) -> list[str]:
-    lines = text.splitlines(keepends=True)
-    chunks, buf, bcount = [], "", 0
-    for line in lines:
-        tcnt = count_tokens(line)
-        if bcount + tcnt > CHUNK_TOKEN_SIZE:
-            chunks.append(buf)
-            buf, bcount = line, tcnt
-        else:
-            buf += line
-            bcount += tcnt
-    if buf:
-        chunks.append(buf)
-    return chunks
+# ── タイムコード単位分割（20秒以上で分割） ──
+def parse_timecode(timecode: str) -> timedelta:
+    h, m, s = map(int, timecode.split(":"))
+    return timedelta(hours=h, minutes=m, seconds=s)
 
-# ── タイムコード単位分割 ──
 def chunk_by_timestamp(text: str) -> list[str]:
     lines = text.splitlines(keepends=True)
     chunks = []
     buf = ""
+    start_time = None
+
     for line in lines:
-        if re.match(r'^\d{2}:\d{2}:\d{2}', line):
-            if buf:
-                chunks.append(buf)
-            buf = line
+        match = re.match(r'^(\d{2}:\d{2}:\d{2})', line)
+        if match:
+            current_time = parse_timecode(match.group(1))
+            if start_time is None:
+                start_time = current_time
+            else:
+                duration = current_time - start_time
+                if duration.total_seconds() >= 20:
+                    chunks.append(buf)
+                    buf = ""
+                    start_time = current_time
+            buf += line
         else:
             buf += line
     if buf:
@@ -57,21 +56,23 @@ def chunk_by_timestamp(text: str) -> list[str]:
     return chunks
 
 # ── Streamlit UI ──
-st.set_page_config(page_title="分割テロップツール", layout="wide")
-st.title("✂️ テロップ自動生成（カテゴリ判定付き）")
+st.set_page_config(page_title="テロップ自動生成AI", layout="wide")
+st.title("✂️ テロップ自動生成AI")
 
 st.markdown("""
-- 「チャンク分割モード」で**タイムコード単位**を選ぶと、  
-  行頭のタイムコードごとに細かくチャンクを作成し、  
-  より多くのテロップ案を生成します。  
-- それ以外は従来の**トークン数ベース**。  
+- タイムコード付きの文字起こし原稿を丸ごと入力欄に貼り付けてください。
+- 「生成開始」のボタンをクリックします。
+- テロップの作成が始まります。しばらくお待ちください（20分尺の動画で5分くらい）
+- 完了したら、生成されたテロップが表示されます。
+- CSVをダウンロードしてPremiereに反映してください。
+- 各カテゴリの要件：
+    - positive：前向き、モチベーション、安心感（例：「役立つ」「おすすめ」）。
+    - negative：注意喚起、問題提起、リスク（例：「危険」「失敗しやすい」）。
+    - neutral：中立的で客観的な事実説明のみ。
+    - point：詳細説明、理由、特徴、回答的な内容（説明文形式）。
 """)
 
-mode = st.selectbox("チャンク分割モード", ["トークン数ベース", "タイムコード単位"])
-transcript = st.text_area(
-    "▶ タイムコード付き文字起こしを貼り付け",
-    height=300
-)
+transcript = st.text_area("▶ タイムコード付き文字起こしを貼り付け", height=300)
 
 if st.button("生成開始"):
     if not transcript.strip():
@@ -79,10 +80,7 @@ if st.button("生成開始"):
         st.stop()
 
     st.info("チャンク分割中…")
-    if mode == "タイムコード単位":
-        chunks = chunk_by_timestamp(transcript)
-    else:
-        chunks = chunk_by_tokens(transcript)
+    chunks = chunk_by_timestamp(transcript)
     st.write(f"▶ 全体を **{len(chunks)}** チャンクに分割しました。")
 
     all_captions = []
@@ -91,14 +89,25 @@ if st.button("生成開始"):
 
         prompt = f"""
 以下は動画のセリフ文字起こし（タイムコード付き）の断片です。
-この内容を「視聴者に一番伝えたいポイントを6語前後で要約したテロップ」にリライトしてください。
-また、そのテロップが以下のどのカテゴリに該当するかを判定し、JSONに含めてください：
-- positive（ポジティブ）
-- negative（ネガティブ）
-- neutral（ニュートラル）
-- point（ポイント／要点）
+この内容を「視聴者に一番伝えたいポイントを要約したテロップ」にリライトしてください。
+30秒あたりに**2〜3つ以上**のテロップを作成してください。
+必ずpointカテゴリを1つ以上生成してください（pointカテゴリは詳細説明文です）。
 
-フォーマット例：
+カテゴリと文字数ルール：
+- positive/negative/neutral：17文字以内。
+- positive/negative/neutralのカテゴリーは、文章が中途半端な状態で終わる場合は、次の文章と合体させて１回で完結させてください。
+- point（詳細説明・解説・回答的内容）：20文字以上40文字未満。
+- pointカテゴリは必ず説明文形式で、文末は「〜です」または「〜ます」で終えること。
+- テロップ内の句読点（。、）は半角スペースに置換してください（！や？はそのままOK）。
+- pointカテゴリは必ずpositive/negative/neutralと交互に出力し、連続してpointを出さないこと。
+
+カテゴリ定義：
+- positive：前向き、モチベーション、安心感。
+- negative：注意喚起、問題提起、リスク。
+- neutral：中立的で客観的な事実説明。
+- point：詳細説明、理由、特徴、回答的な内容。
+
+出力形式は以下のJSONでお願いします：
 [
   {{
     "start":"HH:MM:SS",
@@ -117,11 +126,10 @@ if st.button("生成開始"):
             model=MODEL,
             messages=[{"role":"user","content": prompt}],
             max_tokens=MAX_TOKENS,
-            temperature=0.5,
+            temperature=0.8,
         )
         raw = resp.choices[0].message.content
 
-        # Markdown コードフェンス削除＋空行トリム
         m = re.search(r"```(?:json)?\s*([\s\S]*?)```", raw)
         clean = m.group(1).strip() if m else raw.strip()
         clean = "\n".join([ln for ln in clean.splitlines() if ln.strip()])
@@ -133,11 +141,41 @@ if st.button("生成開始"):
             st.code(raw, language="json")
             st.stop()
 
-        all_captions.extend(caps)
+        filtered_caps = []
+        last_category = ""
+        for cap in caps:
+            caption_text = cap.get("caption", "")
+            category = cap.get("category", "").lower()
+            caption_length = len(caption_text)
 
-    st.success("✅ 全チャンク処理完了！")
-    st.subheader("生成されたテロップ案")
-    st.json(all_captions)
+            # 句読点を半角スペースに置換
+            caption_text = caption_text.replace("。", " ").replace("、", " ")
 
-    df = pd.DataFrame(all_captions)
-    st.download_button("CSV ダウンロード", df.to_csv(index=False), "captions.csv", "text/csv")
+            if category in ["positive", "negative", "neutral"]:
+                if caption_length <= 17:
+                    cap["caption"] = caption_text
+                    filtered_caps.append(cap)
+                    last_category = category
+            elif category == "point":
+                if 15 <= caption_length < 40:
+                    if caption_text.endswith("です") or caption_text.endswith("ます"):
+                        if last_category != "point":
+                            cap["caption"] = caption_text
+                            filtered_caps.append(cap)
+                            last_category = category
+                        else:
+                            continue  # 連続pointならスキップ
+            else:
+                continue
+
+        all_captions.extend(filtered_caps)
+
+    if not all_captions:
+        st.warning("⚠️ 条件を満たすテロップが生成されませんでした。プロンプトや入力を見直してください。")
+    else:
+        st.success("✅ 全チャンク処理完了！")
+        st.subheader("生成されたテロップ案")
+        st.json(all_captions)
+
+        df = pd.DataFrame(all_captions)
+        st.download_button("CSV ダウンロード", df.to_csv(index=False), "captions.csv", "text/csv")
