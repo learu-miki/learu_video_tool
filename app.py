@@ -1,7 +1,9 @@
+import streamlit as st
+st.set_page_config(page_title="テロップ自動生成AI", layout="wide")
+
 import os
 import re
 import json
-import streamlit as st
 import tiktoken
 import pandas as pd
 from dotenv import load_dotenv
@@ -65,7 +67,6 @@ def chunk_by_timestamp(text: str) -> list[str]:
     return chunks
 
 # ── Streamlit UI ──
-st.set_page_config(page_title="テロップ自動生成AI", layout="wide")
 st.title("✂️ テロップ自動生成AI（パスワード認証付き）")
 
 st.markdown("""
