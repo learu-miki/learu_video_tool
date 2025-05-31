@@ -16,6 +16,15 @@ if not API_KEY:
     st.stop()
 client = OpenAI(api_key=API_KEY)
 
+# ── パスワード設定 ──
+APP_PASSWORD = os.getenv("APP_PASSWORD", "my_secret_password")
+
+# ── パスワード認証 ──
+password_input = st.text_input("パスワードを入力してください", type="password")
+if password_input != APP_PASSWORD:
+    st.warning("正しいパスワードを入力してください。")
+    st.stop()
+
 # ── 定数 ──
 MODEL = "gpt-3.5-turbo"
 MAX_TOKENS = 2000
@@ -57,7 +66,7 @@ def chunk_by_timestamp(text: str) -> list[str]:
 
 # ── Streamlit UI ──
 st.set_page_config(page_title="テロップ自動生成AI", layout="wide")
-st.title("✂️ テロップ自動生成AI")
+st.title("✂️ テロップ自動生成AI（パスワード認証付き）")
 
 st.markdown("""
 - タイムコード付きの文字起こし原稿を丸ごと入力欄に貼り付けてください。
