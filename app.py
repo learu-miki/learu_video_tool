@@ -189,42 +189,69 @@ if st.button("生成開始"):
         df = pd.DataFrame(all_captions)
         st.download_button("CSV ダウンロード", df.to_csv(index=False), "captions.csv", "text/csv")
 
-# ── サイドテロップコピー生成 ──
+# ── サイドテロップコピー生成機能 ──
 if st.button("サイドテロップコピーを生成"):
     if not transcript.strip():
         st.error("文字起こしを貼り付けてください。")
         st.stop()
 
-    st.info("サイドテロップコピーを生成中…")
+    st.info("サイドテロップコピー案を生成中…")
 
-    # mode によって分割関数を選択
-    if mode == "章単位":
-        chapters = chunk_by_chapter(transcript)
-    elif mode == "タイムコード単位":
-        chapters = chunk_by_timestamp(transcript)
-    else:
-        chapters = chunk_by_tokens(transcript)
+    # 章単位分割
+    chapters = chunk_by_chapter(transcript)
 
+    all_side_captions = []
     for i, chapter in enumerate(chapters, start=1):
-        start, end = extract_timestamps(chapter)
-        st.write(f"▶ 章 {i}/{len(chapters)}（{start} ～ {end}）を処理中…")
+        st.write(f"▶ シーン {i}/{len(chapters)} を処理中…")
 
         prompt_side_caption = f"""
-以下は動画の章（チャプター）の文字起こし（タイムコード付き）です。
-この章の内容をもとに「視聴者が注目したくなるサイドテロップコピー」を1つ提案してください。
-シーン内の重要なメッセージを簡潔に表現し、注目度を高めるものにしてください。
+以下のテキストは、動画のあるシーンの文字起こし（タイムスタンプ付き）です。
+このテキストに基づいて、このシーンで使用するサイドテロップのコピー案を5案考えてください。
+視聴者が注目するような、インパクトのあるコピーを作成してください。
+出力はJSON配列形式で、例のように出力してください：
+[
+  {{
+    "start": "HH:MM:SS",
+    "end": "HH:MM:SS",
+    "side_caption": "ここにコピー案"
+  }},
+  …
+]
 
-文字起こし：
+テキスト：
 {chapter}
 """
+
         try:
             resp_side_caption = client.chat.completions.create(
                 model=MODEL,
-                messages=[{"role":"user","content": prompt_side_caption}],
-                max_tokens=150,
-                temperature=0.7,
+                messages=[{"role": "user", "content": prompt_side_caption}],
+                max_tokens=500,
+                temperature=0.9
             )
-            st.write(f"章 {i} のサイドテロップコピー（{start} ～ {end}）")
-            st.write(resp_side_caption.choices[0].message.content)
+            raw = resp_side_caption.choices[0].message.content
+
+            # Markdown コードフェンス削除＋空行トリム
+            m = re.search(r"```(?:json)?\s*([\s\S]*?)```", raw)
+            clean = m.group(1).strip() if m else raw.strip()
+            clean = "\n".join([ln for ln in clean.splitlines() if ln.strip()])
+
+            try:
+                side_caps = json.loads(clean)
+            except json.JSONDecodeError as e:
+                st.error(f"シーン {i} のパース失敗: {e}")
+                st.code(raw, language="json")
+                st.stop()
+
+            all_side_captions.extend(side_caps)
+
         except Exception as e:
-            st.error(f"章 {i} のサイドテロップコピー生成中にエラーが発生しました: {e}")
+            st.error(f"サイドテロップコピー生成中にエラーが発生しました: {e}")
+
+    # 結果表示
+    st.success("✅ 全シーン処理完了！")
+    st.subheader("生成されたサイドテロップ案")
+    st.json(all_side_captions)
+
+    df = pd.DataFrame(all_side_captions)
+    st.download_button("CSV ダウンロード", df.to_csv(index=False), "side_captions.csv", "text/csv")
