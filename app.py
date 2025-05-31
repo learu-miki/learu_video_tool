@@ -67,7 +67,7 @@ def chunk_by_timestamp(text: str) -> list[str]:
     return chunks
 
 # ── Streamlit UI ──
-st.title("✂️ テロップ自動生成AI（パスワード認証付き）")
+st.title("✂️ テロップ自動生成AI")
 
 st.markdown("""
 - タイムコード付きの文字起こし原稿を丸ごと入力欄に貼り付けてください。
