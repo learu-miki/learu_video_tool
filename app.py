@@ -189,32 +189,3 @@ if st.button("生成開始"):
         df = pd.DataFrame(all_captions)
         st.download_button("CSV ダウンロード", df.to_csv(index=False), "captions.csv", "text/csv")
 
-# ── サムネイルコピー生成機能 ──
-if st.button("サムネイルコピー案を生成"):
-    if not transcript.strip():
-        st.error("文字起こしを貼り付けてください。")
-        st.stop()
-
-    st.info("サムネイルコピー案を生成中…")
-
-    prompt_thumbnail = f"""
-以下の文字起こし原稿をもとに、
-視聴者がクリックしたくなるような
-インパクトのあるサムネイルコピーを5案作成してください。
-
-文字起こし：
-{transcript}
-"""
-    try:
-        resp_thumbnail = client.chat.completions.create(
-            model=MODEL,
-            messages=[{"role":"user","content": prompt_thumbnail}],
-            max_tokens=500,
-            temperature=0.9,
-            stream=False    # ←ここを追加！！
-        )
-        st.subheader("サムネイルコピー案（5案）")
-        st.write(resp_thumbnail.choices[0].message.content)
-    except Exception as e:
-        st.error(f"サムネイルコピー生成中にエラーが発生しました: {e}")
-
